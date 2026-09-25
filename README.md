@@ -1,94 +1,81 @@
-# GPT-Journey 2
+# GPT-Journey: Case Files
 
-An illustrated, branching text adventure narrated live by Claude.
+A detective game where every murder is written fresh by AI, checked for fairness before you
+see it, and every suspect is played by their own AI actor who knows only their side of the story.
 
-Pick a world (or describe your own), then play by choosing one of the offered actions or typing
-anything you like. Every scene streams in as it's written, gets its own illustration, and updates
-your character sheet. You can rewind to any earlier moment and fork it into a new path.
+Search the scenes for clues, interrogate the suspects, lay evidence on the table to break their
+lies, then name the killer, the motive and your proof. The case file was sealed before you
+started, so the answer is fixed and the mystery can actually be solved.
 
-The [original GPT-Journey](https://github.com/shutzer/GPT-Journey/tree/e6e6144) (2023) was a
-single Flask route that asked GPT-3.5 for a story, pulled the options out with a regex, and
-generated a DALL·E image. This is a ground-up rewrite built around what current models do well.
+Runs entirely in the browser. Bring your own key for **Claude**, **OpenAI** or **Gemini**, or
+play the built-in offline demo case.
 
-## What changed
+## How a case works
 
-| 2023 | Now |
-|---|---|
-| Options scraped from free text with `re.findall(r"Option \d:.*")` | Claude ends each scene with an `advance_story` tool call: validated choices, world state, scene description, title, ending |
-| Wait for the whole reply, then reload the page | Narrative streams token by token over Server-Sent Events |
-| Only the listed buttons | Pick a choice (or press `1`–`4`) or type any free-form action |
-| No memory beyond the chat log | Health, location, objective, inventory and companions tracked every turn |
-| Story never ends | Paced arc with a real ending (victory, defeat, bittersweet) |
-| Lost on refresh; history in a signed cookie | Journeys saved in SQLite, resumable from the home page |
-| — | Timeline of every step; fork any moment into a new journey |
-| DALL·E URL that expires | Claude paints each scene as SVG, sanitised and cached |
-| English only | English, Croatian, German, Spanish, French, Italian |
-| API key read from `key.txt`, hard-coded Flask secret | Credentials from the environment, nothing secret in the repo |
+1. **The architect** (one structured-output call) writes a complete, hidden case file: victim,
+   3–5 suspects each with a real secret, lies, a claimed alibi, what they truly know and what makes
+   them crack, locations, clues, red herrings, the solution and the true timeline.
+2. **Mechanical checks** (`src/game/rules.ts`) verify the cross-references: one culprit, every clue
+   in a real location, 3+ non-red-herring key clues, every innocent has something pointing at them.
+   Failures go back to the model with the list of problems.
+3. **The auditor** (a second, independent call) reads the case as a player would and flags
+   contradictions or ambiguity; the case is repaired once if needed.
+4. **Suspect actors**: each interrogation is a separate conversation whose system prompt holds
+   only that suspect's character sheet. Innocents don't know who did it; only the culprit's actor
+   knows the truth, and it confesses only when cornered with the right evidence.
+5. **Your assistant** reads only what you've found and heard, and suggests what to try next.
+6. **The verdict**: culprit and cited key evidence are scored mechanically; the motive is graded
+   by the model against the sealed solution. Then everything is revealed: the explanation, what
+   really happened, and every suspect's secret and lies.
+
+Time is the resource: every search, question and consultation costs hours.
+
+## Providers
+
+| | Story & suspects | Illustrations |
+|---|---|---|
+| Claude | `claude-opus-5` (adaptive thinking, structured outputs, server-side refusal fallbacks) | — |
+| OpenAI | `gpt-5.6` (Responses API, strict JSON schema) | `gpt-image-2` |
+| Gemini | `gemini-3-flash-preview` (JSON schema, thinking levels) | `gemini-3.1-flash-image` |
+| Demo | Offline, one hand-written case | Procedural placeholders |
+
+Mix freely, e.g. Claude for the mystery with Gemini painting the portraits. Model names are
+editable in Settings, and **Load list** fetches the models your key can use.
+
+API keys stay in your browser and are sent only to the provider you choose. By default they are
+forgotten when you close the tab; tick "Remember keys" to keep them in `localStorage`.
 
 ## Run it
 
-Requires Python 3.11+.
+```bash
+npm install
+npm run dev        # http://localhost:5173
+```
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -e .
-export ANTHROPIC_API_KEY=sk-ant-...
-gpt-journey            # http://127.0.0.1:5001
+npm test           # game logic + wire-format tests for all three SDKs (no network)
+npm run build      # static site in dist/
 ```
 
-No key? `JOURNEY_MOCK=1 gpt-journey` plays a canned offline story with procedural art, which is
-handy for working on the UI.
+The build is a static site with relative paths, so it can be hosted anywhere. The included
+workflow deploys `main` to GitHub Pages; enable it under *Settings → Pages → Source: GitHub
+Actions*.
 
-### Configuration
-
-| Variable | Default | |
-|---|---|---|
-| `JOURNEY_MODEL` | `claude-opus-5` | Model for narration and illustration |
-| `JOURNEY_STORY_EFFORT` | `medium` | Effort for narration (`low` … `max`) |
-| `JOURNEY_ART_EFFORT` | `low` | Effort for SVG illustrations |
-| `JOURNEY_NO_ILLUSTRATIONS` | off | Skip illustrations (halves API usage) |
-| `JOURNEY_NO_FALLBACKS` | off | Disable server-side refusal fallbacks (needed on Bedrock / Vertex / Foundry) |
-| `JOURNEY_MOCK` | off | Offline storyteller, no API calls |
-| `JOURNEY_DB` | `journeys.db` | SQLite file |
-| `JOURNEY_HOST` / `JOURNEY_PORT` | `127.0.0.1` / `5001` | Bind address |
-
-## How it works
+## Layout
 
 ```
-browser ── POST /api/journeys/{id}/turn ──▶ FastAPI ──▶ Claude (streaming)
-   ▲                                          │            thinking → prose → advance_story(...)
-   └──────── SSE: phase / text / step ◀───────┘
-   └── <img src=".../steps/{n}/illustration.svg"> ──▶ Claude paints SVG ──▶ sanitise ──▶ SQLite cache
+src/
+  ai/         provider adapters (Claude, OpenAI, Gemini, offline demo) behind one interface
+  game/       case schema (Zod → JSON Schema), rules & scoring, prompts, engine
+  store/      IndexedDB (cases) and localStorage (settings)
+  ui/         React components, English/Croatian UI
+tests/        Vitest: game flow with the demo provider, request/response shape per SDK
 ```
 
-- **One append-only conversation per journey.** The player's decision is sent back as the
-  `tool_result` of the `advance_story` call that offered it. Assistant turns are stored verbatim,
-  thinking blocks included, and a fork copies an exact prefix of the history, so prompt caching
-  and adaptive thinking stay valid across turns and branches.
-- **Refusals.** Requests opt into server-side fallbacks (`fallbacks: "default"`); if a model
-  declines mid-scene, the UI discards the partial text and the fallback model continues.
-- **SVG safety.** Illustrations pass an element and attribute allow-list (no scripts, event
-  handlers, `foreignObject` or external references) and are served with a restrictive CSP and
-  rendered through `<img>`.
+## History
 
-```
-journey/
-  app.py          FastAPI routes, turn loop, SSE
-  storyteller.py  Claude client (streaming + tool use) and the offline mock
-  prompts.py      System prompts and the advance_story tool schema
-  models.py       Pydantic models: setup, world state, steps, journeys
-  store.py        SQLite persistence
-  svg.py          SVG sanitiser
-static/           Single-page UI (vanilla JS, no build step)
-tests/            API tests (mock storyteller) and a wire-format test against a fake Messages API
-```
-
-## Tests
-
-```bash
-pip install -e ".[dev]"
-pytest
-```
+The [first version](https://github.com/shutzer/GPT-Journey/tree/e6e6144) (2023) was a Flask
+choose-your-own-adventure on GPT-3.5 that pulled options out of free text with a regex.
 
 ## License
 
