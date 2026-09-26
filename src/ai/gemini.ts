@@ -26,7 +26,7 @@ export class GeminiProvider implements TextProvider {
 
   async json(req: JsonRequest): Promise<unknown> {
     try {
-      const response = await this.ai.models.generateContent({
+      const stream = await this.ai.models.generateContentStream({
         model: this.model,
         contents: req.prompt,
         config: {
@@ -37,10 +37,18 @@ export class GeminiProvider implements TextProvider {
           abortSignal: req.signal,
         },
       });
-      const reason = response.candidates?.[0]?.finishReason;
+      let text = "";
+      let reason: string | undefined;
+      for await (const chunk of stream) {
+        if (chunk.text) {
+          text += chunk.text;
+          req.onProgress?.(text.length);
+        }
+        reason = chunk.candidates?.[0]?.finishReason ?? reason;
+      }
       if (reason === "MAX_TOKENS") throw new AIError("Gemini's answer was cut off. Try again.");
-      if (!response.text) throw new AIError(`Gemini returned no answer${reason ? ` (${reason})` : ""}.`);
-      return parseJson(response.text);
+      if (!text) throw new AIError(`Gemini returned no answer${reason ? ` (${reason})` : ""}.`);
+      return parseJson(text);
     } catch (err) {
       throw describeHttpError("Gemini", err);
     }

@@ -7,6 +7,8 @@ export interface JsonRequest {
   schema: Record<string, unknown>;
   effort: Effort;
   signal?: AbortSignal;
+  /** Called as output streams in, with the number of characters received so far. */
+  onProgress?: (chars: number) => void;
 }
 
 export interface ChatMessage {

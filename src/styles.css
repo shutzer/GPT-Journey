@@ -123,6 +123,8 @@ main { max-width: 1200px; margin: 0 auto; padding: 32px 24px 80px; }
 .building li::before { content: "○"; position: absolute; left: 4px; }
 .building li.active { color: var(--ink); } .building li.active::before { content: "◔"; color: var(--accent); animation: spin 1.4s linear infinite; display: inline-block; }
 .building li.done { color: var(--ink-2); } .building li.done::before { content: "✓"; color: var(--green); }
+.build-status { margin: -4px 0 14px; }
+.build-status p { margin: 2px 0; font-variant-numeric: tabular-nums; }
 .spinner { width: 46px; height: 46px; margin: 0 auto; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--accent); animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .dialog { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; width: min(640px, 100%); max-height: calc(100vh - 32px); overflow: auto; }

@@ -16,6 +16,8 @@ export function Home({ settings, uiLang, onOpenSettings }: { settings: Settings;
   const [suspects, setSuspects] = useState(4);
   const [lang, setLang] = useState<Lang>(uiLang);
   const [step, setStep] = useState<BuildStep | null>(null);
+  const [chars, setChars] = useState(0);
+  const [startedAt, setStartedAt] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
 
@@ -35,7 +37,12 @@ export function Home({ settings, uiLang, onOpenSettings }: { settings: Settings;
       const text = await textProvider(settings);
       const setup = { theme: themeText, suspects, lang };
       setStep("draft");
-      const file = await buildCase(text, setup, setStep, controller.signal);
+      setChars(0);
+      setStartedAt(Date.now());
+      const file = await buildCase(text, setup, (st) => {
+        setStep(st);
+        setChars(0);
+      }, controller.signal, setChars);
       const record = newRecord(file, setup, modelLabel(settings));
       await saveCase(record);
       location.hash = `#/case/${record.id}`;
@@ -156,6 +163,7 @@ export function Home({ settings, uiLang, onOpenSettings }: { settings: Settings;
                 </li>
               ))}
             </ol>
+            <BuildStatus chars={chars} startedAt={startedAt} />
             <button className="ghost" onClick={() => abort.current?.abort()}>
               {t("build.cancel")}
             </button>
@@ -163,6 +171,24 @@ export function Home({ settings, uiLang, onOpenSettings }: { settings: Settings;
         </div>
       )}
     </main>
+  );
+}
+
+/** Elapsed time and streamed output, so a long generation visibly makes progress. */
+function BuildStatus({ chars, startedAt }: { chars: number; startedAt: number }) {
+  const t = useT();
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(id);
+  }, []);
+  const secs = Math.max(0, Math.floor((now - startedAt) / 1000));
+  const clock = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+  return (
+    <div className="build-status">
+      <p>{chars ? t("build.writing", { n: chars.toLocaleString() }) : t("build.thinking")} · {clock}</p>
+      <p className="muted small">{t("build.hint")}</p>
+    </div>
   );
 }
 
