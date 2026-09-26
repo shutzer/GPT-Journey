@@ -1,5 +1,5 @@
 import type { CaseRecord } from "../game/state";
-import { Portrait } from "./CaseView";
+import { Portrait } from "./Portrait";
 import { useT } from "./i18n";
 
 export function Reveal({ record }: { record: CaseRecord }) {
@@ -19,6 +19,18 @@ export function Reveal({ record }: { record: CaseRecord }) {
           <span>
             {t("reveal.score")} · <b>{t(verdict.rank)}</b>
           </span>
+        </div>
+        <div className="verdict-stats">
+          <span>
+            <b>{verdict.liesExposed}/{verdict.liesTotal}</b> {t("reveal.liesExposed")}
+          </span>
+          <span>
+            <b>{verdict.keyCited}/{verdict.keyTotal}</b> {t("reveal.keyCitedShort")}
+          </span>
+          <span>
+            <b>{verdict.strikes}</b> {t("reveal.misses")}
+          </span>
+          {verdict.confessed && <span className="tag cited">{t("reveal.confessed")}</span>}
         </div>
         <p className="muted">{t("reveal.keyStats", { found: verdict.keyFound, total: verdict.keyTotal, cited: verdict.keyCited })}</p>
         {verdict.motive.comment && <p className="motive-comment">“{verdict.motive.comment}”</p>}
@@ -87,9 +99,16 @@ export function Reveal({ record }: { record: CaseRecord }) {
                 <b>{s.name}</b>
               </header>
               <p>{s.secret}</p>
-              <p className="muted small">
-                {t("reveal.lies")}: {s.lies.join(" · ")}
-              </p>
+              <ul className="lies">
+                {s.statements
+                  .filter((st) => st.lie)
+                  .map((st) => (
+                    <li key={st.id} className={record.exposed.includes(st.id) ? "caught" : "missed"}>
+                      <span className="said">“{st.text}”</span>
+                      <span className="tag">{t(record.exposed.includes(st.id) ? "talk.caught" : "reveal.missed")}</span>
+                    </li>
+                  ))}
+              </ul>
             </article>
           ))}
         </div>

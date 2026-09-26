@@ -26,15 +26,29 @@ export const DEMO_CASE: CaseFile = {
       relationship_to_victim: "Worked for him for nine years; he never let her forget it",
       opening_statement:
         "Detective. Mr Horvat was a demanding man, but he did not deserve this. I was in my compartment all evening, typing his correspondence. Ask me anything you need.",
-      claimed_alibi: "Typing letters alone in compartment 5 from 22:00 until the alarm.",
+      statements: [
+        {
+          id: "s1_a",
+          text: "I stayed in my compartment all evening, typing Mr Horvat's letters. I never left it.",
+          lie: true,
+          contradicted_by: ["c4"],
+          admission:
+            "Very well. I was in the dining car from a quarter past eleven, meeting a man from Lloyd Triestino. I'm leaving Horvat's employ. And from that window, at a quarter to twelve, I saw Dr Marić walking back from compartment 3 with his black bag.",
+        },
+        {
+          id: "s1_b",
+          text: "Mr Horvat drank one glass of Pelinkovac at midnight, every night, without fail.",
+          lie: false,
+          contradicted_by: [],
+          admission: "",
+        },
+      ],
       true_whereabouts: "Dining car from 23:15 to 23:50, meeting an agent of the rival Lloyd Triestino line.",
       secret: "She has accepted a job with Horvat's rival and was handing over his shipping contracts.",
-      lies: ["She never left her compartment.", "She has never met anyone from Lloyd Triestino."],
       knowledge: [
         "At about 23:45, from the dining car window, she saw Dr Marić walking back along the corridor from the direction of compartment 3, carrying his black bag.",
         "Horvat kept a decanter of Pelinkovac brandy in his compartment and drank a glass every night at midnight, without fail.",
       ],
-      breaking_point: "Shown the dining car bill (c4), she admits the meeting and then, to clear herself, reveals she saw Dr Marić near compartment 3 at 23:45.",
       portrait_prompt: "A composed woman in her thirties with a severe bob and a grey suit, a pencil behind her ear.",
     },
     {
@@ -47,12 +61,32 @@ export const DEMO_CASE: CaseFile = {
       relationship_to_victim: "Says they met tonight for the first time",
       opening_statement:
         "A terrible business. I examined him when the conductor called me, but there was nothing to be done. I had retired early with a book; I heard nothing until the commotion.",
-      claimed_alibi: "Asleep in compartment 7 from 23:00.",
+      statements: [
+        {
+          id: "s2_a",
+          text: "I had never met Mr Horvat before tonight. His name meant nothing to me.",
+          lie: true,
+          contradicted_by: ["c2", "c8"],
+          admission: "Ivan Marić was my brother. He drowned on the Adria Star. Yes, I knew exactly who Viktor Horvat was.",
+        },
+        {
+          id: "s2_b",
+          text: "I retired at eleven and did not leave my compartment until the alarm.",
+          lie: true,
+          contradicted_by: ["c7", "s1_a_truth", "s4_a_truth"],
+          admission: "I went to see him at twenty to twelve. I told him I was a doctor and offered to check his heart.",
+        },
+        {
+          id: "s2_c",
+          text: "I carry no poisons. I am a physician, not a chemist.",
+          lie: true,
+          contradicted_by: ["c3"],
+          admission: "The killing jar. The cyanide is gone because I put it in his brandy while he looked for his papers.",
+        },
+      ],
       true_whereabouts: "Visited Horvat at 23:40 claiming to check his heart, and poisoned the brandy decanter while Horvat looked for his papers.",
       secret: "His younger brother Ivan drowned in 1934 when Horvat's unseaworthy ship Adria Star sank.",
-      lies: ["He had never met Horvat before tonight.", "He did not leave his compartment before the alarm.", "He has no poisons with him."],
       knowledge: ["He noticed Mira Horvat's glove was missing when she came to the scene."],
-      breaking_point: "Confronted with the killing jar (c3) together with the Adria Star clipping (c2) or the specimen pin (c7), he stops lying and admits he killed Horvat for his brother.",
       portrait_prompt: "A tall thin man in his fifties with round spectacles, a tweed coat and a small silver butterfly pin.",
     },
     {
@@ -65,12 +99,25 @@ export const DEMO_CASE: CaseFile = {
       relationship_to_victim: "Married two years; unhappy",
       opening_statement:
         "You think I did it, don't you? Everyone will. Viktor and I argued, yes, but I was reading in the ladies' lounge. I never went near his compartment tonight.",
-      claimed_alibi: "Reading in the ladies' lounge from 23:00.",
+      statements: [
+        {
+          id: "s3_a",
+          text: "I was reading in the ladies' lounge from eleven. I never went near Viktor's compartment.",
+          lie: true,
+          contradicted_by: ["c6"],
+          admission: "Fine! I was in the corridor on my way to meet Tomo. Viktor was alive, I heard him humming behind the door at five to twelve.",
+        },
+        {
+          id: "s3_b",
+          text: "The conductor? I barely know the man.",
+          lie: true,
+          contradicted_by: ["s4_a_truth"],
+          admission: "Tomo and I... it has been going on for a year. He's the only kind thing on this line.",
+        },
+      ],
       true_whereabouts: "In the corridor near compartment 3 at 23:55, slipping away to meet the conductor Tomo in the luggage van.",
       secret: "She is having an affair with the conductor, Tomo Babić.",
-      lies: ["She was in the ladies' lounge.", "She barely knows the conductor."],
       knowledge: ["When she passed compartment 3 at about 23:55 the door was closed and she heard Viktor humming, so he was alive then."],
-      breaking_point: "Shown the glove from the corridor (c6), she admits she was near compartment 3 to meet Tomo, and that Viktor was alive and humming at 23:55.",
       portrait_prompt: "A glamorous young woman in a fur stole with finger-waved hair and anxious eyes.",
     },
     {
@@ -83,12 +130,25 @@ export const DEMO_CASE: CaseFile = {
       relationship_to_victim: "Served him on this route for years; Horvat tipped badly",
       opening_statement:
         "Terrible night, sir. The bell from compartment 3 rang at midnight, but I was busy at the back and got there late, at twenty past. He was already gone, God rest him.",
-      claimed_alibi: "Checking tickets in the rear carriages until the bell.",
+      statements: [
+        {
+          id: "s4_a",
+          text: "I was checking tickets in the rear carriages until the bell rang at midnight.",
+          lie: true,
+          contradicted_by: ["c5", "s3_a_truth"],
+          admission: "All right, sir. I was in the luggage van, with my cigarettes, and with Mrs Horvat. But before that, at twenty to twelve, I saw the doctor knocking at compartment 3.",
+        },
+        {
+          id: "s4_b",
+          text: "Nobody went near compartment 3 before midnight, sir. I'd have seen them.",
+          lie: true,
+          contradicted_by: ["s1_a_truth"],
+          admission: "The doctor. Dr Marić went in at about twenty to twelve. I didn't want trouble with a gentleman.",
+        },
+      ],
       true_whereabouts: "In the luggage van with Mira Horvat from 23:55 to 00:15.",
       secret: "He smuggles cigarettes across the border in the luggage van, and he is Mira's lover.",
-      lies: ["He was checking tickets.", "Nothing in the luggage van belongs to him."],
       knowledge: ["The only passenger he saw near compartment 3 before midnight was Dr Marić, at about 23:40."],
-      breaking_point: "Shown the cigarette crate (c5), he admits the smuggling and that he was with Mira, and mentions seeing Dr Marić at compartment 3 at 23:40.",
       portrait_prompt: "A stocky railway conductor with a waxed moustache and a peaked cap with brass badge.",
     },
   ],
@@ -162,6 +222,38 @@ export const DEMO_CASE: CaseFile = {
       points_to: "s4",
       significance: "Tomo is a smuggler, which is why he lies about where he was. Not the murder.",
       red_herring: true,
+    },
+    {
+      id: "c8",
+      title: "Telegram for Horvat",
+      description: "From the Rijeka harbour master: 'Adria Star inquiry reopened. Brother of drowned officer Marić travelling on your train. Take care.'",
+      location_id: "loc_luggage",
+      points_to: "s2",
+      significance: "Horvat was warned that Marić's brother was aboard: the doctor's claim never to have heard of him is a lie.",
+      red_herring: false,
+    },
+  ],
+  events: [
+    {
+      at_hour: 6,
+      title: "A telegram arrives",
+      text: "The stationmaster's boy wades through the snow with a telegram for Mr Horvat. It's in the luggage van now.",
+      effect: "reveal_clue",
+      target: "c8",
+    },
+    {
+      at_hour: 14,
+      title: "Footprints in the snow",
+      text: "Someone hauled a heavy crate out of the luggage van and buried it in a drift. Whatever it was, it's gone.",
+      effect: "destroy_clue",
+      target: "c5",
+    },
+    {
+      at_hour: 26,
+      title: "A lawyer by sledge",
+      text: "Mrs Horvat's lawyer has arrived from Delnice. She will answer no more questions.",
+      effect: "silence",
+      target: "s3",
     },
   ],
   solution: {
