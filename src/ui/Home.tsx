@@ -29,7 +29,9 @@ export function Home({ settings, uiLang, onOpenSettings }: { settings: Settings;
   async function start(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    const themeText = theme === "custom" ? custom.trim() : translate(theme);
+    const own = custom.trim();
+    // With a preset selected, the text box carries extra wishes; with "custom" it is the whole theme.
+    const themeText = theme === "custom" ? own : own ? `${translate(theme)}. Player's wishes: ${own}` : translate(theme);
     if (!themeText) return;
     const controller = new AbortController();
     abort.current = controller;
@@ -85,16 +87,24 @@ export function Home({ settings, uiLang, onOpenSettings }: { settings: Settings;
         )}
         <fieldset className="themes">
           <legend>{t("home.theme")}</legend>
-          {[...THEMES, "custom"].map((key) => (
+          {["custom", ...THEMES].map((key) => (
             <label key={key} className={`theme theme-${key}`}>
               <input type="radio" name="theme" value={key} checked={theme === key} onChange={() => setTheme(key)} />
-              <span>{key === "custom" ? t("home.custom") : t(`theme.${key}`)}</span>
+              <span>{key === "custom" ? `✍️ ${t("home.custom")}` : t(`theme.${key}`)}</span>
             </label>
           ))}
         </fieldset>
-        {theme === "custom" && (
-          <input className="full" value={custom} maxLength={200} onChange={(e) => setCustom(e.target.value)} placeholder={t("home.customPlaceholder")} autoFocus required />
-        )}
+        <label className="field">
+          <span>{t(theme === "custom" ? "home.customLabel" : "home.wishesLabel")}</span>
+          <textarea
+            rows={3}
+            value={custom}
+            maxLength={600}
+            required={theme === "custom"}
+            onChange={(e) => setCustom(e.target.value)}
+            placeholder={t(theme === "custom" ? "home.customPlaceholder" : "home.wishesPlaceholder")}
+          />
+        </label>
         <div className="row">
           <label className="field">
             <span>{t("home.suspects")}</span>
