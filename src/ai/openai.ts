@@ -25,22 +25,36 @@ export class OpenAIProvider implements TextProvider {
 
   async json(req: JsonRequest): Promise<unknown> {
     try {
-      const response = await this.client.responses.create(
+      // Streamed so a long case file never sits on one silent request, and so the UI can show progress.
+      const stream = await this.client.responses.create(
         {
           model: this.model,
           instructions: req.system,
           input: req.prompt,
           reasoning: { effort: req.effort },
           text: { format: { type: "json_schema", name: req.schemaName, schema: req.schema, strict: true } },
+          stream: true,
         },
         { signal: req.signal },
       );
-      if (response.status === "incomplete") throw new AIError("OpenAI's answer was cut off. Try again.");
-      const refusal = response.output
-        .flatMap((item) => (item.type === "message" ? item.content : []))
-        .find((part) => part.type === "refusal");
-      if (refusal) throw new AIError("OpenAI declined this request.");
-      return parseJson(response.output_text);
+      let text = "";
+      for await (const event of stream) {
+        switch (event.type) {
+          case "response.output_text.delta":
+            text += event.delta;
+            req.onProgress?.(text.length);
+            break;
+          case "response.refusal.delta":
+            throw new AIError("OpenAI declined this request.");
+          case "response.incomplete":
+            throw new AIError("OpenAI's answer was cut off. Try again.");
+          case "response.failed":
+            throw new AIError(`OpenAI failed: ${event.response.error?.message ?? "unknown error"}`);
+          case "error":
+            throw new AIError(`OpenAI error: ${event.message}`);
+        }
+      }
+      return parseJson(text);
     } catch (err) {
       throw describeHttpError("OpenAI", err);
     }

@@ -41,6 +41,10 @@ export class ClaudeProvider implements TextProvider {
         },
         { signal: req.signal },
       );
+      let chars = 0;
+      for await (const event of stream) {
+        if (event.type === "content_block_delta" && event.delta.type === "text_delta") req.onProgress?.((chars += event.delta.text.length));
+      }
       const message = await stream.finalMessage();
       if (message.stop_reason === "refusal") throw new AIError("Claude declined this request.");
       if (message.stop_reason === "max_tokens") throw new AIError("Claude's answer was cut off. Try again.");

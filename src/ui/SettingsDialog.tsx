@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { listModels } from "../ai";
 import type { ImageProviderId, Settings, TextProviderId } from "../ai/types";
 import { useT } from "./i18n";
@@ -36,7 +36,7 @@ export function SettingsDialog({
     <div className="provider" key={p}>
       <label className="field">
         <span>{t("settings.key", { name: NAMES[p] })}</span>
-        <input type="password" autoComplete="off" spellCheck={false} value={settings.keys[p]} onChange={(e) => setKey(p, e.target.value)} placeholder={p === "claude" ? "sk-ant-…" : p === "openai" ? "sk-…" : "AIza…"} />
+        <KeyInput value={settings.keys[p]} onChange={(v) => setKey(p, v)} placeholder={p === "claude" ? "sk-ant-…" : p === "openai" ? "sk-…" : "AIza…"} />
       </label>
       <div className="row">
         <label className="field">
@@ -73,7 +73,7 @@ export function SettingsDialog({
 
   return (
     <div className="overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <form className="dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title" autoComplete="off" onSubmit={(e) => { e.preventDefault(); onClose(); }}>
         <h2 id="settings-title">{t("settings.title")}</h2>
 
         <h3>{t("settings.text")}</h3>
@@ -104,11 +104,33 @@ export function SettingsDialog({
         <p className="muted small">{t("settings.keysNote")}</p>
 
         <div className="dialog-actions">
-          <button className="primary" onClick={onClose}>
+          <button className="primary" type="submit">
             {t("settings.done")}
           </button>
         </div>
-      </div>
+      </form>
     </div>
+  );
+}
+
+/**
+ * Uncontrolled on purpose: a controlled React input mirrors its value into the DOM `value`
+ * attribute, where DevTools, extensions and page snapshots can read the key. Setting only the
+ * `.value` property keeps it out of the markup.
+ */
+function KeyInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current && ref.current.value !== value) ref.current.value = value;
+  }, [value]);
+  return (
+    <input
+      ref={ref}
+      type="password"
+      autoComplete="off"
+      spellCheck={false}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value.trim())}
+    />
   );
 }

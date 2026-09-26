@@ -20,14 +20,21 @@ import type { Accusation, CaseRecord, CaseSetup, ChatTurn } from "./state";
 
 export type BuildStep = "draft" | "repair" | "audit" | "done";
 
-async function draft(text: TextProvider, prompt: string, signal?: AbortSignal): Promise<{ file?: CaseFile; problems: string[] }> {
+async function draft(
+  text: TextProvider,
+  prompt: string,
+  signal?: AbortSignal,
+  onProgress?: (chars: number) => void,
+): Promise<{ file?: CaseFile; problems: string[] }> {
   const raw = await text.json({
     system: ARCHITECT_SYSTEM,
     prompt,
     schemaName: "case_file",
     schema: jsonSchema(CaseFile),
-    effort: "high",
+    // "high" makes reasoning models think for minutes before writing; medium plus the audit is enough.
+    effort: "medium",
     signal,
+    onProgress,
   });
   const parsed = CaseFile.safeParse(raw);
   if (!parsed.success) return { problems: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`) };
@@ -43,15 +50,16 @@ export async function buildCase(
   setup: CaseSetup,
   onStep: (step: BuildStep) => void = () => {},
   signal?: AbortSignal,
+  onProgress?: (chars: number) => void,
 ): Promise<CaseFile> {
   onStep("draft");
-  let { file, problems } = await draft(text, architectPrompt(setup), signal);
+  let { file, problems } = await draft(text, architectPrompt(setup), signal, onProgress);
   if (file) problems = validateCase(file, setup.suspects);
 
   for (let attempt = 0; problems.length && attempt < 2; attempt++) {
     onStep("repair");
     const prompt = file ? repairPrompt(setup, file, problems) : architectPrompt(setup);
-    ({ file, problems } = await draft(text, prompt, signal));
+    ({ file, problems } = await draft(text, prompt, signal, onProgress));
     if (file) problems = validateCase(file, setup.suspects);
   }
   if (!file || problems.length) throw new AIError("Couldn't produce a consistent case. Try again or pick another model.");
@@ -63,13 +71,13 @@ export async function buildCase(
       prompt: auditPrompt(file),
       schemaName: "audit",
       schema: jsonSchema(Audit),
-      effort: "medium",
+      effort: "low",
       signal,
     }),
   );
   if (audit.success && !audit.data.solvable && audit.data.issues.length) {
     onStep("repair");
-    const repaired = await draft(text, repairPrompt(setup, file, audit.data.issues), signal);
+    const repaired = await draft(text, repairPrompt(setup, file, audit.data.issues), signal, onProgress);
     // Keep the repaired version only if it still passes the mechanical checks.
     if (repaired.file && !validateCase(repaired.file, setup.suspects).length) file = repaired.file;
   }

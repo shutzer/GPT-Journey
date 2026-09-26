@@ -53,7 +53,11 @@ describe("Claude", () => {
   it("json: structured output, adaptive thinking, effort and fallbacks", async () => {
     const { fn, calls } = fakeFetch(() => claudeStream([{ type: "text", text: '{"ok":' }, { type: "text", text: "true}" }]));
     const p = new ClaudeProvider("sk-test", "claude-opus-5", true, fn);
-    await expect(p.json({ system: "sys", prompt: "hi", schemaName: "x", schema, effort: "high" })).resolves.toEqual({ ok: true });
+    const progress: number[] = [];
+    await expect(
+      p.json({ system: "sys", prompt: "hi", schemaName: "x", schema, effort: "high", onProgress: (n) => progress.push(n) }),
+    ).resolves.toEqual({ ok: true });
+    expect(progress).toEqual([6, 11]);
     const { body, headers, url } = calls[0];
     expect(url).toMatch(/\/v1\/messages/);
     expect(body.model).toBe("claude-opus-5");
@@ -101,21 +105,38 @@ describe("Claude", () => {
 });
 
 describe("OpenAI", () => {
-  it("json: Responses API with strict json_schema", async () => {
+  it("json: streamed Responses API with strict json_schema, reporting progress", async () => {
     const { fn, calls } = fakeFetch(() =>
-      Response.json({
-        id: "resp_1", object: "response", status: "completed", model: "gpt-5.6",
-        output: [{ type: "message", id: "m1", role: "assistant", status: "completed", content: [{ type: "output_text", text: '{"ok":true}', annotations: [] }] }],
-      }),
+      sse([
+        [null, { type: "response.output_text.delta", delta: '{"ok":', item_id: "m", output_index: 0, content_index: 0, sequence_number: 1 }],
+        [null, { type: "response.output_text.delta", delta: "true}", item_id: "m", output_index: 0, content_index: 0, sequence_number: 2 }],
+        [null, { type: "response.completed", sequence_number: 3, response: { id: "r", status: "completed", output: [] } }],
+      ]),
     );
     const p = new OpenAIProvider("sk-o", "gpt-5.6", fn);
-    await expect(p.json({ system: "sys", prompt: "hi", schemaName: "case_file", schema, effort: "medium" })).resolves.toEqual({ ok: true });
+    const progress: number[] = [];
+    await expect(
+      p.json({ system: "sys", prompt: "hi", schemaName: "case_file", schema, effort: "medium", onProgress: (n) => progress.push(n) }),
+    ).resolves.toEqual({ ok: true });
+    expect(progress).toEqual([6, 11]);
     const { body, url, headers } = calls[0];
     expect(url).toMatch(/\/responses$/);
+    expect(body.stream).toBe(true);
     expect(body.instructions).toBe("sys");
     expect(body.reasoning).toEqual({ effort: "medium" });
     expect(body.text.format).toEqual({ type: "json_schema", name: "case_file", schema, strict: true });
     expect(headers.get("authorization")).toBe("Bearer sk-o");
+  });
+
+  it("json: surfaces truncation and refusals", async () => {
+    const cut = new OpenAIProvider("k", "gpt-5.6", fakeFetch(() =>
+      sse([[null, { type: "response.incomplete", sequence_number: 1, response: { id: "r", status: "incomplete", output: [] } }]]),
+    ).fn);
+    await expect(cut.json({ system: "", prompt: "", schemaName: "x", schema, effort: "low" })).rejects.toThrow(/cut off/);
+    const no = new OpenAIProvider("k", "gpt-5.6", fakeFetch(() =>
+      sse([[null, { type: "response.refusal.delta", delta: "I can't", item_id: "m", output_index: 0, content_index: 0, sequence_number: 1 }]]),
+    ).fn);
+    await expect(no.json({ system: "", prompt: "", schemaName: "x", schema, effort: "low" })).rejects.toThrow(/declined/);
   });
 
   it("stream: yields output_text deltas", async () => {
@@ -145,15 +166,22 @@ describe("OpenAI", () => {
 describe("Gemini", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("json: responseJsonSchema + thinking level", async () => {
+  it("json: streamed, responseJsonSchema + thinking level", async () => {
     const { fn, calls } = fakeFetch(() =>
-      Response.json({ candidates: [{ content: { role: "model", parts: [{ text: '{"ok":true}' }] }, finishReason: "STOP" }] }),
+      sse([
+        [null, { candidates: [{ content: { role: "model", parts: [{ text: '{"ok":' }] } }] }],
+        [null, { candidates: [{ content: { role: "model", parts: [{ text: "true}" }] }, finishReason: "STOP" }] }],
+      ]),
     );
     vi.stubGlobal("fetch", fn);
     const p = new GeminiProvider("AIza-test", "gemini-3-flash-preview");
-    await expect(p.json({ system: "sys", prompt: "hi", schemaName: "x", schema, effort: "high" })).resolves.toEqual({ ok: true });
+    const progress: number[] = [];
+    await expect(
+      p.json({ system: "sys", prompt: "hi", schemaName: "x", schema, effort: "high", onProgress: (n) => progress.push(n) }),
+    ).resolves.toEqual({ ok: true });
+    expect(progress).toEqual([6, 11]);
     const { url, body, headers } = calls[0];
-    expect(url).toContain("models/gemini-3-flash-preview:generateContent");
+    expect(url).toContain("models/gemini-3-flash-preview:streamGenerateContent");
     expect(headers.get("x-goog-api-key")).toBe("AIza-test");
     expect(body.generationConfig.responseMimeType).toBe("application/json");
     expect(body.generationConfig.responseJsonSchema).toEqual(schema);
