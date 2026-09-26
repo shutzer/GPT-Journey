@@ -12,23 +12,36 @@ play the built-in offline demo case.
 
 ## How a case works
 
-1. **The architect** (one structured-output call) writes a complete, hidden case file: victim,
-   3–5 suspects each with a real secret, lies, a claimed alibi, what they truly know and what makes
-   them crack, locations, clues, red herrings, the solution and the true timeline.
-2. **Mechanical checks** (`src/game/rules.ts`) verify the cross-references: one culprit, every clue
-   in a real location, 3+ non-red-herring key clues, every innocent has something pointing at them.
-   Failures go back to the model with the list of problems.
-3. **The auditor** (a second, independent call) reads the case as a player would and flags
-   contradictions or ambiguity; the case is repaired once if needed.
-4. **Suspect actors**: each interrogation is a separate conversation whose system prompt holds
-   only that suspect's character sheet. Innocents don't know who did it; only the culprit's actor
-   knows the truth, and it confesses only when cornered with the right evidence.
-5. **Your assistant** reads only what you've found and heard, and suggests what to try next.
-6. **The verdict**: culprit and cited key evidence are scored mechanically; the motive is graded
-   by the model against the sealed solution. Then everything is revealed: the explanation, what
-   really happened, and every suspect's secret and lies.
+1. **The premise** (a quick, low-effort call) sets the scene: title, briefing, victim and cast.
+   You read it, with the cover painting in, while the rest of the case is written.
+2. **The architect** writes the sealed case file around it: each suspect's formal testimony
+   (true statements and lies, with the exact evidence that disproves each lie and what the
+   suspect admits when caught), locations, clues, red herrings, timed events and the solution.
+3. **Mechanical checks** (`src/game/rules.ts`) verify every cross-reference and replay the whole
+   investigation with perfect play: every lie must be exposable through the chain of clues and
+   admissions, even after events destroy evidence. Failures go back to the model to repair;
+   unfair events are dropped.
+4. **The auditor** (an independent call) reads the case as a player would and flags ambiguity.
 
-Time is the resource: every search, question and consultation costs hours.
+## How you play
+
+- **Search** the scenes (3 h each) for clues.
+- **Interview** suspects to take their testimony, and question them freely. Each suspect is a
+  separate AI actor that knows only its own character sheet.
+- **Object!** Pick a statement and the clue, statement or admission that proves it false.
+  A hit breaks the lie: the suspect admits something new, which becomes evidence against others.
+  A miss costs time and credibility; three misses and you're off the case. Break every lie the
+  culprit told and they confess.
+- **Events** fire as the clock runs: new evidence turns up, unfound evidence is destroyed,
+  a suspect lawyers up and stops answering questions.
+- **The board**: every clue, statement and admission as a draggable card. Tie cards together
+  with red string, and raise objections straight from the board.
+- **Accuse** the culprit with motive and evidence. Scoring counts the right culprit, lies
+  exposed, key evidence cited, the motive (graded by the model), time left, a confession, and
+  your wrong objections.
+- **Quick / standard / hard** cases (3, 4 or 5 suspects), a **case of the day** (same setting and
+  twist for everyone that day, streak counter) and a **career** rank from your solved cases.
+  These are stored in your browser; there is no server or shared leaderboard.
 
 ## Providers
 

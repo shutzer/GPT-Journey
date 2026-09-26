@@ -15,8 +15,26 @@ export class DemoProvider implements TextProvider {
   async json(req: JsonRequest): Promise<unknown> {
     await sleep(this.delay * 10);
     switch (req.schemaName) {
-      case "case_file":
+      case "premise": {
+        const c = structuredClone(DEMO_CASE);
+        return {
+          title: c.title,
+          setting: c.setting,
+          art_style: c.art_style,
+          briefing: c.briefing,
+          cover_prompt: c.cover_prompt,
+          victim: c.victim,
+          cast: c.suspects.map((s) => ({ name: s.name, role: s.role })),
+        };
+      }
+      case "case_file": {
+        const text = JSON.stringify(DEMO_CASE);
+        for (let i = 1; i <= 4; i++) {
+          await sleep(this.delay * 5);
+          req.onProgress?.(Math.round((text.length * i) / 4));
+        }
         return structuredClone(DEMO_CASE);
+      }
       case "audit":
         return { solvable: true, issues: [] };
       case "motive_grade": {
@@ -42,33 +60,20 @@ function suspectReply(system: string, messages: ChatMessage[]): string {
   const suspect = DEMO_CASE.suspects.find((s) => system.startsWith(`You are ${s.name},`));
   if (!suspect) return "...";
   const last = messages.at(-1)?.content ?? "";
+  // Objection: the prompt carries the admission to make.
+  const admission = last.match(/make this admission in your own words: "([^]*)"\)$/)?.[1];
+  if (last.includes("OBJECTION!") && admission) return `*${suspect.name.split(" ").at(-1)} is silent for a moment.* ${admission}`;
+  if (last.includes("*The detective lays evidence on the table:*")) return "I don't see what that proves, Detective.";
   const q = last.toLowerCase();
-  const shown = DEMO_CASE.clues.filter((c) => last.includes(`[${c.title}:`)).map((c) => c.id);
-  const cracks = [...suspect.breaking_point.matchAll(/\b(c\d+)\b/g)].map((m) => m[1]);
-
-  if (suspect.id === "s2") {
-    const hard = shown.includes("c3") && (shown.includes("c2") || shown.includes("c7"));
-    if (hard) return "*He takes off his spectacles and is quiet for a long time.* Ivan was thirty-one. Horvat knew that ship would not survive a winter sea. Yes, Detective. I put it in his brandy.";
-    if (shown.length) return "*He studies it politely.* A curious object. I'm afraid I can't see how it concerns me.";
-  } else if (shown.some((id) => cracks.includes(id))) {
-    return CONFESSIONS[suspect.id] ?? "...";
-  } else if (shown.length) {
-    return "I don't see what that has to do with me.";
-  }
-  if (/where|alibi|gdje|bili|were you/.test(q)) return `As I said: ${suspect.claimed_alibi.charAt(0).toLowerCase()}${suspect.claimed_alibi.slice(1)}`;
+  const says = (i: number) => suspect.statements[i % suspect.statements.length].text;
+  if (/where|alibi|gdje|bili|were you/.test(q)) return `As I told you: ${says(0)}`;
   if (/saw|see|notice|vidje|know|zna/.test(q)) return suspect.knowledge.at(-1) ?? "I saw nothing.";
   if (/horvat|victim|him|žrtv|njega/.test(q)) return `${suspect.relationship_to_victim}. That's all there is to say.`;
-  return suspect.lies[0] ?? "I have nothing more to say.";
+  return says(1);
 }
 
-const CONFESSIONS: Record<string, string> = {
-  s1: "*She sets the bill down very carefully.* Very well. I met a man from Lloyd Triestino; I am leaving Horvat's employ, and I was giving them his contracts. That is a betrayal, not a murder. And since we are being honest: at a quarter to twelve I saw Dr Marić coming back along the corridor from compartment 3, with his black bag.",
-  s3: "*She snatches the glove.* Fine! I was in the corridor, on my way to Tomo. Yes, Tomo. But Viktor was alive, I heard him humming behind the door at five to twelve. Humming! As if nothing in the world could touch him.",
-  s4: "*He rubs his moustache.* All right, sir, the cigarettes are mine, a man has to live. And I was in the van with Mrs Horvat, God forgive me. But I'll tell you who I did see at compartment 3 before midnight: the doctor, at about twenty to.",
-};
-
 function watson(): string {
-  return "Everyone we've spoken to is hiding something, but not everything they hide is murder. The poison was in the decanter, so the killer only had to reach it before midnight. I'd ask each of them who they saw near compartment 3, and I'd take a close look at what the doctor keeps in his specimen case.";
+  return "Everyone here is hiding something, but not everything they hide is murder. The poison was in the decanter, so the killer only had to reach it before midnight. Whoever claims they never left their room while someone saw them in the corridor is our weak point: find what the secretary was really doing, and see what she saw.";
 }
 
 /** Procedural placeholder art so the demo still looks like a case board. */

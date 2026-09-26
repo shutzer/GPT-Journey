@@ -1,15 +1,33 @@
 import { useEffect, useRef, useState } from "react";
 import { imageProvider, textProvider } from "../ai";
 import type { Settings } from "../ai/types";
-import { accuse, consultWatson, interrogate, paint, search } from "../game/engine";
-import { COST, canAct, cluesAt, nextClue } from "../game/rules";
-import type { Clue, Suspect } from "../game/schema";
+import { accuse, consultWatson, interrogate, interview, migrate, paint, search } from "../game/engine";
+import {
+  COST,
+  MAX_STRIKES,
+  canAct,
+  cluesAt,
+  composure,
+  evidence,
+  isDestroyed,
+  isSilenced,
+  nextClue,
+  offCase,
+  truthId,
+} from "../game/rules";
+import type { CaseEvent, Clue } from "../game/schema";
 import type { Accusation, CaseRecord } from "../game/state";
+import { recordResult } from "../store/career";
 import { loadCase, saveCase } from "../store/persist";
+import { Board } from "./Board";
 import { useT } from "./i18n";
+import { ObjectionDialog } from "./Objection";
+import { Portrait } from "./Portrait";
 import { Reveal } from "./Reveal";
+import { Rich } from "./Rich";
 
-type Tab = "dossier" | "scenes" | "suspects" | "notebook";
+type Tab = "dossier" | "scenes" | "suspects" | "board" | "notebook";
+type Objecting = { statementId?: string; evidenceId?: string };
 
 export function CaseView({ id, settings }: { id: string; settings: Settings }) {
   const t = useT();
@@ -17,13 +35,15 @@ export function CaseView({ id, settings }: { id: string; settings: Settings }) {
   const [tab, setTab] = useState<Tab>("dossier");
   const [talkTo, setTalkTo] = useState<string | null>(null);
   const [accusing, setAccusing] = useState(false);
+  const [objecting, setObjecting] = useState<Objecting | null>(null);
+  const [news, setNews] = useState<CaseEvent[]>([]);
   const loaded = useRef(false);
 
   useEffect(() => {
     loadCase(id).then((r) => {
       if (!r) location.hash = "#/";
       else {
-        setRecord(r);
+        setRecord(migrate(r));
         loaded.current = true;
         document.title = `${r.file.title} · ${t("app.name")}`;
       }
@@ -33,6 +53,7 @@ export function CaseView({ id, settings }: { id: string; settings: Settings }) {
   // Persist every change.
   useEffect(() => {
     if (record && loaded.current) void saveCase(record);
+    if (record?.verdict) recordResult(record);
   }, [record]);
 
   // Paint whatever images are missing (new case, or a previous run was interrupted).
@@ -58,8 +79,12 @@ export function CaseView({ id, settings }: { id: string; settings: Settings }) {
   if (!record) return <main className="case loading">{t("common.loading")}</main>;
   if (record.verdict) return <Reveal record={record} />;
 
-  const outOfTime = !canAct(record, COST.question);
-  const tabs: Tab[] = ["dossier", "scenes", "suspects", "notebook"];
+  const apply = (r: CaseRecord, events: CaseEvent[] = []) => {
+    setRecord(r);
+    if (events.length) setNews((n) => [...n, ...events]);
+  };
+  const done = offCase(record);
+  const tabs: Tab[] = ["dossier", "scenes", "suspects", "board", "notebook"];
 
   return (
     <main className="case">
@@ -68,19 +93,28 @@ export function CaseView({ id, settings }: { id: string; settings: Settings }) {
           <p className="kicker">{record.file.setting}</p>
           <h1>{record.file.title}</h1>
         </div>
-        <div className="clock" title={t("case.time")}>
-          <div className="clock-bar">
-            <div style={{ width: `${(record.time / record.timeTotal) * 100}%` }} />
+        <div className="meters">
+          <div className="clock" title={t("case.time")}>
+            <div className="clock-bar">
+              <div style={{ width: `${(record.time / record.timeTotal) * 100}%` }} />
+            </div>
+            <span>
+              {t("case.time")}: <b>{t("case.hours", { n: record.time })}</b>
+            </span>
           </div>
-          <span>
-            {t("case.time")}: <b>{t("case.hours", { n: record.time })}</b>
-          </span>
+          <div className="rep" title={t("case.rep")}>
+            <span className="muted small">{t("case.rep")}</span>
+            <span className="stars">
+              {"★".repeat(MAX_STRIKES - record.strikes)}
+              <span className="lost">{"★".repeat(record.strikes)}</span>
+            </span>
+          </div>
         </div>
         <button className="primary accuse-btn" onClick={() => setAccusing(true)}>
           {t("case.accuse")}
         </button>
       </div>
-      {outOfTime && <p className="notice urgent">{t("case.outOfTime")}</p>}
+      {done && <p className="notice urgent">{t(record.strikes >= MAX_STRIKES ? "case.offCase" : "case.outOfTime")}</p>}
 
       <nav className="tabs" role="tablist">
         {tabs.map((k) => (
@@ -91,40 +125,75 @@ export function CaseView({ id, settings }: { id: string; settings: Settings }) {
         ))}
       </nav>
 
-      <div className="case-body">
-        <section className="case-main">
-          {tab === "dossier" && <Dossier record={record} />}
-          {tab === "scenes" && <Scenes record={record} onChange={setRecord} />}
-          {tab === "suspects" &&
-            (talkTo ? (
-              <Interrogation key={talkTo} record={record} suspectId={talkTo} settings={settings} onChange={setRecord} onBack={() => setTalkTo(null)} />
-            ) : (
-              <SuspectGrid record={record} onPick={setTalkTo} />
-            ))}
-          {tab === "notebook" && (
-            <div className="mobile-only">
-              <Notebook record={record} settings={settings} onChange={setRecord} />
-            </div>
-          )}
-        </section>
-        <aside className="case-side desktop-only">
-          <Notebook record={record} settings={settings} onChange={setRecord} />
-        </aside>
-      </div>
+      {tab === "board" ? (
+        <Board record={record} onChange={setRecord} onObject={(statementId, evidenceId) => setObjecting({ statementId, evidenceId })} />
+      ) : (
+        <div className="case-body">
+          <section className="case-main">
+            {tab === "dossier" && <Dossier record={record} />}
+            {tab === "scenes" && <Scenes record={record} onChange={apply} />}
+            {tab === "suspects" &&
+              (talkTo ? (
+                <Interrogation
+                  key={talkTo}
+                  record={record}
+                  suspectId={talkTo}
+                  settings={settings}
+                  onChange={apply}
+                  onBack={() => setTalkTo(null)}
+                  onObject={(statementId) => setObjecting({ statementId })}
+                />
+              ) : (
+                <SuspectGrid record={record} onPick={(sid) => (setTalkTo(sid), setRecord(interview(record, sid)))} />
+              ))}
+            {tab === "notebook" && (
+              <div className="mobile-only">
+                <Notebook record={record} settings={settings} onChange={apply} onObject={() => setObjecting({})} />
+              </div>
+            )}
+          </section>
+          <aside className="case-side desktop-only">
+            <Notebook record={record} settings={settings} onChange={apply} onObject={() => setObjecting({})} />
+          </aside>
+        </div>
+      )}
 
+      {news.length > 0 && !objecting && !accusing && <NewsFlash event={news[0]} record={record} onClose={() => setNews((n) => n.slice(1))} />}
+      {objecting && (
+        <ObjectionDialog
+          record={record}
+          settings={settings}
+          statementId={objecting.statementId}
+          evidenceId={objecting.evidenceId}
+          onResult={apply}
+          onClose={() => setObjecting(null)}
+        />
+      )}
       {accusing && <AccuseDialog record={record} settings={settings} onDone={setRecord} onClose={() => setAccusing(false)} />}
     </main>
   );
 }
 
-export function Portrait({ record, suspect, size = 64 }: { record: CaseRecord; suspect: Suspect; size?: number }) {
-  const url = record.images.portraits[suspect.id];
-  const initials = suspect.name.split(/\s+/).map((w) => w[0]).slice(-2).join("");
-  let hue = 0;
-  for (const ch of suspect.id + suspect.name) hue = (hue * 31 + ch.charCodeAt(0)) % 360;
+function NewsFlash({ event, record, onClose }: { event: CaseEvent; record: CaseRecord; onClose: () => void }) {
+  const t = useT();
+  const clue = record.file.clues.find((c) => c.id === event.target);
+  const where = clue && record.file.locations.find((l) => l.id === clue.location_id);
+  const who = record.file.suspects.find((s) => s.id === event.target);
   return (
-    <div className="portrait" style={{ width: size, height: size, background: url ? undefined : `hsl(${hue} 30% 22%)` }}>
-      {url ? <img src={url} alt={suspect.name} /> : <span style={{ fontSize: size * 0.36 }}>{initials}</span>}
+    <div className="overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="dialog news">
+        <p className="kicker">{t("news.kicker", { h: event.at_hour })}</p>
+        <h2>{event.title}</h2>
+        <p className="prose">{event.text}</p>
+        {event.effect === "reveal_clue" && where && <p className="notice">{t("news.reveal", { place: where.name })}</p>}
+        {event.effect === "destroy_clue" && <p className="notice urgent">{t("news.destroy")}</p>}
+        {event.effect === "silence" && who && <p className="notice urgent">{t("news.silence", { name: who.name })}</p>}
+        <div className="dialog-actions">
+          <button className="primary" onClick={onClose} autoFocus>
+            {t("obj.continue")}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -163,18 +232,27 @@ function Dossier({ record }: { record: CaseRecord }) {
           <dd>{file.victim.found}</dd>
         </dl>
       </div>
-      <p className="muted small">{t("dossier.rules", { search: COST.search, question: COST.question })}</p>
+      <div className="how card-lite">
+        <h3>{t("how.title")}</h3>
+        <ol>
+          <li>{t("how.1", { n: COST.search })}</li>
+          <li>{t("how.2")}</li>
+          <li>{t("how.3", { n: MAX_STRIKES })}</li>
+          <li>{t("how.4")}</li>
+        </ol>
+      </div>
     </div>
   );
 }
 
-function Scenes({ record, onChange }: { record: CaseRecord; onChange: (r: CaseRecord) => void }) {
+function Scenes({ record, onChange }: { record: CaseRecord; onChange: (r: CaseRecord, events: CaseEvent[]) => void }) {
   const t = useT();
   const [flash, setFlash] = useState<string | null>(null);
   return (
     <div className="scenes">
       {record.file.locations.map((loc) => {
         const found = cluesAt(record.file, loc.id).filter((c) => record.found.includes(c.id));
+        const lost = cluesAt(record.file, loc.id).filter((c) => isDestroyed(record, c.id));
         const clean = !nextClue(record, loc.id);
         return (
           <article key={loc.id} className="scene card-lite">
@@ -188,7 +266,7 @@ function Scenes({ record, onChange }: { record: CaseRecord; onChange: (r: CaseRe
                   onClick={() => {
                     const res = search(record, loc.id);
                     if (res.clue) {
-                      onChange(res.record);
+                      onChange(res.record, res.events);
                       setFlash(res.clue.id);
                     }
                   }}
@@ -201,6 +279,7 @@ function Scenes({ record, onChange }: { record: CaseRecord; onChange: (r: CaseRe
             {found.map((c) => (
               <ClueCard key={c.id} clue={c} fresh={flash === c.id} />
             ))}
+            {lost.length > 0 && <p className="muted small">🔥 {t("scenes.lost")}</p>}
           </article>
         );
       })}
@@ -217,20 +296,45 @@ function ClueCard({ clue, fresh = false }: { clue: Clue; fresh?: boolean }) {
   );
 }
 
+function Nerves({ value }: { value: number }) {
+  const t = useT();
+  return (
+    <div className="nerves" title={t("talk.nerves")}>
+      <span className="muted small">{t("talk.nerves")}</span>
+      <div className="nerves-bar">
+        <div style={{ width: `${value * 100}%` }} />
+      </div>
+    </div>
+  );
+}
+
 function SuspectGrid({ record, onPick }: { record: CaseRecord; onPick: (id: string) => void }) {
   const t = useT();
   return (
     <div className="suspects">
-      {record.file.suspects.map((s) => (
-        <button key={s.id} className="suspect-card" onClick={() => onPick(s.id)}>
-          <Portrait record={record} suspect={s} size={96} />
-          <div>
-            <b>{s.name}</b>
-            <span className="muted small">{s.role}</span>
-            <span className="muted small">{t("suspects.questions", { n: (record.talks[s.id]?.length ?? 0) / 2 })}</span>
-          </div>
-        </button>
-      ))}
+      {record.file.suspects.map((s) => {
+        const lies = s.statements.filter((st) => st.lie).length;
+        const caught = s.statements.filter((st) => record.exposed.includes(st.id)).length;
+        return (
+          <button key={s.id} className={`suspect-card ${composure(record, s.id) === 0 ? "broken" : ""}`} onClick={() => onPick(s.id)}>
+            <Portrait record={record} suspect={s} size={96} />
+            <div>
+              <b>{s.name}</b>
+              <span className="muted small">{s.role}</span>
+              {record.interviewed.includes(s.id) ? (
+                <>
+                  <Nerves value={composure(record, s.id)} />
+                  <span className="muted small">{t("suspects.caught", { n: caught })}</span>
+                </>
+              ) : (
+                <span className="tag-new small">{t("suspects.new")}</span>
+              )}
+              {isSilenced(record, s.id) && <span className="muted small">🤐 {t("talk.silenced")}</span>}
+              {lies > 0 && caught === lies && <span className="small broken-label">{t("suspects.broken")}</span>}
+            </div>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -241,12 +345,14 @@ function Interrogation({
   settings,
   onChange,
   onBack,
+  onObject,
 }: {
   record: CaseRecord;
   suspectId: string;
   settings: Settings;
-  onChange: (r: CaseRecord) => void;
+  onChange: (r: CaseRecord, events: CaseEvent[]) => void;
   onBack: () => void;
+  onObject: (statementId: string) => void;
 }) {
   const t = useT();
   const suspect = record.file.suspects.find((s) => s.id === suspectId)!;
@@ -256,7 +362,9 @@ function Interrogation({
   const [error, setError] = useState<string | null>(null);
   const log = useRef<HTMLDivElement>(null);
   const turns = record.talks[suspectId] ?? [];
-  const clue = (id: string) => record.file.clues.find((c) => c.id === id);
+  const items = evidence(record);
+  const label = (id: string) => items.find((e) => e.id === id)?.title ?? id;
+  const silenced = isSilenced(record, suspectId);
 
   useEffect(() => {
     log.current?.scrollTo({ top: log.current.scrollHeight, behavior: "smooth" });
@@ -273,7 +381,7 @@ function Interrogation({
       const gen = interrogate(await textProvider(settings), record, suspectId, q, shown);
       for (let step = await gen.next(); ; step = await gen.next()) {
         if (step.done) {
-          onChange(step.value);
+          onChange(step.value.record, step.value.events);
           break;
         }
         const answer = step.value;
@@ -287,20 +395,6 @@ function Interrogation({
       setPending(null);
     }
   }
-
-  const quote = (text: string) => `${suspect.name}: ${text}`;
-  const pinned = (text: string) => record.pins.some((p) => p.text === quote(text));
-  const pin = (text: string) =>
-    !pinned(text) && onChange({ ...record, pins: [...record.pins, { suspectId, text: quote(text) }], updatedAt: Date.now() });
-
-  const Line = ({ text }: { text: string }) => (
-    <div className="line them">
-      <p>{text}</p>
-      <button className="ghost pin" onClick={() => pin(text)} disabled={pinned(text)}>
-        {pinned(text) ? t("talk.pinned") : t("talk.pin")}
-      </button>
-    </div>
-  );
 
   return (
     <div className="interrogation">
@@ -318,23 +412,54 @@ function Interrogation({
           <p className="small">
             <b>{t("talk.relation")}:</b> {suspect.relationship_to_victim}
           </p>
+          <Nerves value={composure(record, suspectId)} />
         </div>
       </header>
 
+      <section className="testimony">
+        <h3>{t("talk.testimony")}</h3>
+        {suspect.statements.map((st) => {
+          const caught = record.exposed.includes(st.id);
+          return (
+            <div key={st.id} className={`statement ${caught ? "caught" : ""}`}>
+              <p className="said">“{st.text}”</p>
+              {caught ? (
+                <p className="admitted">
+                  <span className="tag cited">{t("talk.caught")}</span> {items.find((e) => e.id === truthId(st.id))?.text}
+                </p>
+              ) : (
+                <button className="objection-btn small" disabled={!canAct(record, COST.objection)} onClick={() => onObject(st.id)}>
+                  {t("obj.fire")}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </section>
+
+      <h3 className="subhead">{t("talk.questions")}</h3>
       <div className="log" ref={log} aria-live="polite">
-        <Line text={suspect.opening_statement} />
+        <div className="line them">
+          <p>
+            <Rich text={suspect.opening_statement} />
+          </p>
+        </div>
         {turns.map((turn, i) =>
           turn.role === "user" ? (
             <div key={i} className="line me">
               {turn.evidence?.map((id) => (
                 <span key={id} className="chip">
-                  🗂 {clue(id)?.title}
+                  🗂 {label(id)}
                 </span>
               ))}
               <p>{turn.text}</p>
             </div>
           ) : (
-            <Line key={i} text={turn.text} />
+            <div key={i} className="line them">
+              <p>
+                <Rich text={turn.text} />
+              </p>
+            </div>
           ),
         )}
         {pending && (
@@ -342,14 +467,14 @@ function Interrogation({
             <div className="line me">
               {pending.evidence.map((id) => (
                 <span key={id} className="chip">
-                  🗂 {clue(id)?.title}
+                  🗂 {label(id)}
                 </span>
               ))}
               <p>{pending.question}</p>
             </div>
             <div className="line them typing">
               <p>
-                {pending.answer}
+                <Rich text={pending.answer} />
                 <span className="caret" />
               </p>
             </div>
@@ -358,41 +483,60 @@ function Interrogation({
       </div>
 
       {error && <p className="error">{error}</p>}
-      {record.found.length > 0 && (
-        <div className="evidence-picker">
-          <span className="muted small">{t("talk.show")}:</span>
-          {record.found.map((id) => (
-            <button
-              key={id}
-              type="button"
-              className={`chip toggle ${shown.includes(id) ? "on" : ""}`}
-              onClick={() => setShown((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))}
-            >
-              {clue(id)?.title}
+      {silenced ? (
+        <p className="notice">🤐 {t("talk.silencedLong", { name: suspect.name })}</p>
+      ) : (
+        <>
+          {record.found.length > 0 && (
+            <div className="evidence-picker">
+              <span className="muted small">{t("talk.show")}:</span>
+              {record.found.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={`chip toggle ${shown.includes(id) ? "on" : ""}`}
+                  onClick={() => setShown((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))}
+                >
+                  {label(id)}
+                </button>
+              ))}
+            </div>
+          )}
+          <form className="ask" onSubmit={ask}>
+            <input
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder={t("talk.placeholder", { name: suspect.name })}
+              maxLength={500}
+              disabled={!!pending || !canAct(record, COST.question)}
+            />
+            <button className="primary" disabled={!!pending || !question.trim() || !canAct(record, COST.question)}>
+              {t("talk.ask", { n: COST.question })}
             </button>
-          ))}
-        </div>
+          </form>
+        </>
       )}
-      <form className="ask" onSubmit={ask}>
-        <input
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          placeholder={t("talk.placeholder", { name: suspect.name })}
-          maxLength={500}
-          disabled={!!pending || !canAct(record, COST.question)}
-        />
-        <button className="primary" disabled={!!pending || !question.trim() || !canAct(record, COST.question)}>
-          {t("talk.ask", { n: COST.question })}
-        </button>
-      </form>
     </div>
   );
 }
 
-function Notebook({ record, settings, onChange }: { record: CaseRecord; settings: Settings; onChange: (r: CaseRecord) => void }) {
+function Notebook({
+  record,
+  settings,
+  onChange,
+  onObject,
+}: {
+  record: CaseRecord;
+  settings: Settings;
+  onChange: (r: CaseRecord, events: CaseEvent[]) => void;
+  onObject: () => void;
+}) {
   const t = useT();
   const [thinking, setThinking] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const items = evidence(record);
+  const testimony = items.filter((e) => e.kind !== "clue");
+  const happened = record.fired.map((i) => record.file.events[i]).filter(Boolean);
 
   async function watson() {
     setError(null);
@@ -401,7 +545,7 @@ function Notebook({ record, settings, onChange }: { record: CaseRecord; settings
       const gen = consultWatson(await textProvider(settings), record);
       for (let step = await gen.next(); ; step = await gen.next()) {
         if (step.done) {
-          onChange(step.value);
+          onChange(step.value.record, step.value.events);
           break;
         }
         setThinking(step.value);
@@ -415,6 +559,10 @@ function Notebook({ record, settings, onChange }: { record: CaseRecord; settings
 
   return (
     <div className="notebook">
+      <button className="objection-btn wide" disabled={!testimony.length || !canAct(record, COST.objection)} onClick={onObject}>
+        {t("obj.fire")}
+      </button>
+
       <h3>{t("notebook.evidence")}</h3>
       {!record.found.length && <p className="muted small">{t("notebook.noEvidence")}</p>}
       {record.found.map((id) => {
@@ -422,18 +570,30 @@ function Notebook({ record, settings, onChange }: { record: CaseRecord; settings
         return <ClueCard key={id} clue={clue} />;
       })}
 
-      <h3>{t("notebook.pins")}</h3>
-      {!record.pins.length && <p className="muted small">{t("notebook.noPins")}</p>}
+      <h3>{t("notebook.testimony")}</h3>
+      {!testimony.length && <p className="muted small">{t("notebook.noTestimony")}</p>}
       <ul className="pins">
-        {record.pins.map((p, i) => (
-          <li key={i}>
-            <span>“{p.text}”</span>
-            <button className="ghost icon" aria-label={t("notebook.unpin")} onClick={() => onChange({ ...record, pins: record.pins.filter((_, j) => j !== i), updatedAt: Date.now() })}>
-              ×
-            </button>
+        {testimony.map((e) => (
+          <li key={e.id} className={`${e.kind} ${record.exposed.includes(e.id) ? "caught" : ""}`}>
+            <span>
+              <b>{e.title}:</b> “{e.text}”
+            </span>
           </li>
         ))}
       </ul>
+
+      {happened.length > 0 && (
+        <>
+          <h3>{t("notebook.events")}</h3>
+          <ul className="events">
+            {happened.map((e, i) => (
+              <li key={i}>
+                <span className="muted small">{t("case.hours", { n: e.at_hour })}</span> {e.title}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
 
       <h3>{t("notebook.watson")}</h3>
       {record.watson.map((note, i) => (
@@ -469,7 +629,7 @@ function AccuseDialog({
   const t = useT();
   const [culprit, setCulprit] = useState<string | null>(null);
   const [motive, setMotive] = useState("");
-  const [evidence, setEvidence] = useState<string[]>([]);
+  const [cited, setCited] = useState<string[]>([]);
   const [judging, setJudging] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -479,7 +639,7 @@ function AccuseDialog({
     setJudging(true);
     setError(null);
     try {
-      const accusation: Accusation = { culpritId: culprit, motive, evidence };
+      const accusation: Accusation = { culpritId: culprit, motive, evidence: cited };
       onDone(await accuse(await textProvider(settings), record, accusation));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -507,14 +667,14 @@ function AccuseDialog({
         {!record.found.length && <p className="muted small">{t("notebook.noEvidence")}</p>}
         <div className="evidence-picker">
           {record.found.map((id) => {
-            const on = evidence.includes(id);
+            const on = cited.includes(id);
             return (
               <button
                 type="button"
                 key={id}
                 className={`chip toggle ${on ? "on" : ""}`}
-                disabled={!on && evidence.length >= 3}
-                onClick={() => setEvidence((ev) => (on ? ev.filter((x) => x !== id) : [...ev, id]))}
+                disabled={!on && cited.length >= 3}
+                onClick={() => setCited((ev) => (on ? ev.filter((x) => x !== id) : [...ev, id]))}
               >
                 {record.file.clues.find((c) => c.id === id)?.title}
               </button>
